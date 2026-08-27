@@ -213,7 +213,7 @@ function clamp(s,n){ s=String(s||''); return s.length>n? s.slice(0,n-1)+'…' : 
 const CATEGORIES=[
   {name:'동력 및 주행 제어', kw:['torque','speed','rpm','gear','shift','engine','drive','accel','throttle','moving','average']},
   {name:'안전 및 Fail-Safe', kw:['seatbelt','belt','safety','fail','neutral','error','interlock','protect','restart','parking','clutch','buzzer']},
-  {name:'차량 편의 및 보안', kw:['password','esl','lock','hac','dcsr','key','setting','display','master','user']},
+  {name:'차량 편의 및 보안', kw:['password','esl','lock','hac','hill','assist','dcsr','key','setting','display','master','user']},
   {name:'유지보수 시스템', kw:['maintenance','filter','oil','service','hour','interval','h1098','lamp','replace','count']},
   {name:'센서/신호 처리(참고)', kw:['ad','sensor','value','temp','temperature','pressure','load','fuel','voltage','ain']},
 ];
@@ -418,7 +418,12 @@ function parseFunctions(masked, raw, lineStarts){
    7. 함수별 주석 매핑
    ===================================================================================== */
 function attachComments(fns, allComments){
-  fns.forEach(f=>{ f.comments = allComments.filter(c=>c.line>=f.startLine-6 && c.line<=f.endLine).map(c=>c.text); });
+  const sorted=fns.slice().sort((a,b)=>a.startLine-b.startLine);
+  sorted.forEach((f,idx)=>{
+    const prevEnd = idx>0 ? sorted[idx-1].endLine : 0;
+    const lower = Math.max(f.startLine-6, prevEnd+1);
+    f.comments = allComments.filter(c=>c.line>=lower && c.line<=f.endLine).map(c=>c.text);
+  });
 }
 
 /* =====================================================================================
@@ -507,6 +512,10 @@ function extractCAN(fn){
 function tokenize(name){
   return name.replace(/([a-z0-9])([A-Z])/g,'$1_$2').split(/[_\d]+/).map(s=>s.toLowerCase()).filter(Boolean);
 }
+/* 짧은 키워드(3자 이하)는 부분일치 시 다른 단어에 우연히 포함되는 오탐이 잦아
+   (예: 'ain' ⊂ 'maintenance') 토큰/텍스트 전체를 단어 경계로 매칭한다 */
+function kwHitTok(tok,k){ return k.length<=3 ? tok===k : tok.includes(k); }
+function kwHitText(text,k){ return k.length<=3 ? new RegExp('\\b'+k+'\\b','i').test(text) : text.includes(k); }
 function classify(fn){
   const nameTok=tokenize(fn.name);
   const branchText=(fn.branchSummary||[]).map(b=>b.cond).join(' ').toLowerCase();
@@ -515,9 +524,9 @@ function classify(fn){
   CATEGORIES.forEach((c,i)=>{
     let score=0;
     c.kw.forEach(k=>{
-      if(nameTok.some(t=>t.includes(k))) score+=3;
-      if(branchText.includes(k)) score+=1;
-      if(canText.includes(k)) score+=1;
+      if(nameTok.some(t=>kwHitTok(t,k))) score+=3;
+      if(kwHitText(branchText,k)) score+=1;
+      if(kwHitText(canText,k)) score+=1;
     });
     if(score>bestScore){ bestScore=score; best=i; }
   });
@@ -541,7 +550,7 @@ function describeFunc(fn){
   let verb=null;
   for(const [re,txt] of verbMap) if(re.test(fn.name)){ verb=txt; break; }
   const domainHit=[];
-  CATEGORIES.forEach(c=>{ c.kw.forEach(k=>{ if(nameTok.some(t=>t.includes(k))) domainHit.push(k); }); });
+  CATEGORIES.forEach(c=>{ c.kw.forEach(k=>{ if(nameTok.some(t=>kwHitTok(t,k))) domainHit.push(k); }); });
   const uniqDomain=[...new Set(domainHit)];
   if(verb && uniqDomain.length){
     return {text:`${uniqDomain.slice(0,3).join('/')} 관련 ${verb}`, confident:true};
