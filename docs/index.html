@@ -438,6 +438,46 @@ function attachComments(fns, allComments){
 /* =====================================================================================
    8. 제어 흐름 트리 추출 (if/else/switch/return, 최대 깊이 4, 최대 노드 40)
    ===================================================================================== */
+/* switch 본문을 case/default 라벨 단위로 쪼갠다(중첩 블록 안의 case는 건너뛴다 — 중괄호 깊이 0에서만 인식) */
+function isWordChar(ch){ return !!ch && /[A-Za-z0-9_]/.test(ch); }
+function findCaseLabels(text){
+  const labels=[]; const n=text.length; let depth=0;
+  for(let i=0;i<n;i++){
+    const c=text[i];
+    if(c==='{'){ depth++; continue; }
+    if(c==='}'){ depth--; continue; }
+    if(depth!==0) continue;
+    if(c==='c' && text.startsWith('case',i) && !isWordChar(text[i-1]) && !isWordChar(text[i+4])){
+      const colon=text.indexOf(':', i+4);
+      if(colon<0) break;
+      labels.push({kw:'case', label:text.slice(i+4,colon).replace(/\s+/g,' ').trim(), start:i, end:colon+1});
+      i=colon; continue;
+    }
+    if(c==='d' && text.startsWith('default',i) && !isWordChar(text[i-1]) && !isWordChar(text[i+7])){
+      const colon=text.indexOf(':', i+7);
+      if(colon<0) break;
+      labels.push({kw:'default', label:'', start:i, end:colon+1});
+      i=colon; continue;
+    }
+  }
+  return labels;
+}
+function scanSwitchBody(text, depth){
+  const labels=findCaseLabels(text);
+  if(!labels.length) return depth<4? scanBlock(text, depth+1) : [];
+  const nodes=[];
+  for(let idx=0; idx<labels.length && nodes.length<40; idx++){
+    const segStart=labels[idx].end;
+    const segEnd = idx+1<labels.length ? labels[idx+1].start : text.length;
+    const segText=text.slice(segStart, segEnd);
+    nodes.push({
+      type:'case',
+      cond: labels[idx].kw==='default' ? 'default' : (labels[idx].label||'값 없음'),
+      children: depth<4? scanBlock(segText, depth+1) : []
+    });
+  }
+  return nodes;
+}
 function scanBlock(text, depth){
   const nodes=[]; const n=text.length; let i=0;
   const re=/\b(if|else|switch|return)\b/g;
@@ -480,7 +520,7 @@ function scanBlock(text, depth){
     nodes.push({
       type: kw==='switch'?'switch':'branch',
       cond: clamp(cond,70),
-      children: depth<4? scanBlock(childText, depth+1):[]
+      children: kw==='switch' ? scanSwitchBody(childText, depth) : (depth<4? scanBlock(childText, depth+1):[])
     });
     i=after;
   }
@@ -494,6 +534,7 @@ function flattenBranches(nodes, depth, out){
   nodes.forEach(n=>{
     if(n.type==='return') out.push({kw:'RETURN', cond:n.label, depth});
     else if(n.type==='else') out.push({kw:'ELSE', cond:n.cond, depth});
+    else if(n.type==='case') out.push({kw:n.cond==='default'?'DEFAULT':'CASE', cond:n.cond==='default'?'':n.cond, depth});
     else out.push({kw:n.type==='switch'?'SWITCH':'IF', cond:n.cond, depth});
     if(n.children && n.children.length && depth<1) flattenBranches(n.children, depth+1, out);
   });
@@ -703,9 +744,13 @@ function pairBranches(nodes){
     }
     let falseChildren=[];
     if(nodes[i+1] && nodes[i+1].type==='else'){ falseChildren=pairBranches(nodes[i+1].children||[]); i++; }
+    let condLabel;
+    if(n.type==='switch') condLabel='SWITCH '+n.cond;
+    else if(n.type==='case') condLabel = n.cond==='default' ? 'DEFAULT:' : ('CASE '+n.cond+':');
+    else condLabel=n.cond;
     out.push({
       kind:'decision',
-      cond: (n.type==='switch'?'SWITCH ':'') + n.cond,
+      cond: condLabel,
       trueChildren: pairBranches(n.children||[]),
       falseChildren
     });
@@ -762,10 +807,11 @@ function flowLayoutSeq(items, x, y, counter){
       curY += FLOW_RH+FLOW_GAP;
     } else {
       counter.n++;
+      const isCaseNode = /^(CASE |DEFAULT:)/.test(item.cond);
       const dCenterY=curY+FLOW_DH/2;
       elements.push(flowDiamond(x, dCenterY, item.cond));
       const trueY=curY+FLOW_DH+FLOW_GAP;
-      elements.push(flowArrowDown(x, curY+FLOW_DH, trueY, '예'));
+      elements.push(flowArrowDown(x, curY+FLOW_DH, trueY, isCaseNode?'':'예'));
       const trueRes = item.trueChildren.length
         ? flowLayoutSeq(item.trueChildren, x, trueY, counter)
         : {elements:[], bottomY:trueY, maxRight:x+FLOW_DW/2};
@@ -1001,6 +1047,7 @@ function flowToDocxParas(nodes, depth, out){
     const indent=200+depth*260;
     if(n.type==='return') out.push(para('■ RETURN '+n.label, {size:17,color:'1F8A70',indent}));
     else if(n.type==='else') out.push(para('◇ ELSE (그 외)', {size:17,color:'B26A00',indent}));
+    else if(n.type==='case') out.push(para(n.cond==='default'?'▸ DEFAULT:':('▸ CASE '+n.cond+':'), {size:17,color:'2F6FD6',indent}));
     else out.push(para((n.type==='switch'?'◆ SWITCH ':'◆ IF ')+'( '+n.cond+' )', {size:17,color:'1B3A66',indent}));
     if(n.children && n.children.length) flowToDocxParas(n.children, depth+1, out);
   });

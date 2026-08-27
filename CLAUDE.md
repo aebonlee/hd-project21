@@ -48,6 +48,7 @@ hd-project21/
 | 파서 | `buildLineIndex`, `lineOf`, `matchBrace`, `parseFunctions` | 전역 스코프 함수 추출(중괄호 깊이 0에서만 매칭) |
 | | `attachComments` | 함수별 주석 매핑 — **직전 함수 endLine을 하한선으로 clamp**(2026-08-27에 이 clamp 없어서 이전 함수 주석이 새는 버그 있었음) |
 | 흐름 분석 | `scanBlock`, `buildFlow`, `flattenBranches` | if/else/switch/return 트리 추출(최대 깊이 4, 노드 40개 캡) |
+| | `findCaseLabels`, `scanSwitchBody` | switch 본문을 case/default 라벨 단위로 세분화(중괄호 깊이 0에서만 인식 — 중첩 switch의 case가 섞이지 않게) |
 | CAN 추출 | `extractCAN` | `구조체SPN.필드`, `RX_/CAN_..._PGN` 패턴 스캔 |
 | **분류/설명** | `tokenize`, `kwHitTok`, `kwHitText`, `classify`, `describeFunc` | 카테고리 자동 분류 + 한글 설명 자동 생성 — §6 단어경계 버그 교훈 필독 |
 | 분석 오케스트레이션 | `runAnalysis` | 위 전부를 묶어 `ANALYSIS` 객체 생성 |
@@ -119,6 +120,6 @@ node scripts/verify.mjs
 
 ## 10. 남은 일 / 알려진 한계
 
-- `switch`/`case`가 case별 개별 분기로 모델링되지 않고 전체가 다이아몬드 하나로 뭉뚱그려진다. 세분화하려면 `scanBlock()`에 `case`/`default` 키워드 인식을 추가해야 한다.
+- `switch`/`case`는 2026-08-27에 개별 분기로 세분화 완료(`scanSwitchBody`/`findCaseLabels` — 중괄호 깊이 0에서만 case 라벨 인식, 중첩 switch의 case는 안 섞임). 화면 SVG의 SWITCH 다이아몬드 자체 하강 화살표에 '예' 라벨이 붙는 것은 사소한 문구상 어색함으로 남아있음(구조적 오류 아님) — 필요시 다음에 다듬을 것.
 - Word 다운로드를 클로드인크롬 자동화 세션에서 클릭했을 때 에러는 없었으나, 그 세션의 다운로드 폴더를 찾지 못해 파일 저장 자체는 육안 확인을 못 했다(§7 Step 3의 Node+LibreOffice 검증으로 로직은 이미 증명됨 — 남은 건 실제 Word 앱에서의 최종 확인, 이건 사람이 직접 할 몫).
 - 사양서 표지의 회사명·결재자 등은 전부 `[확인 필요]` 기본값 — 특정 회사명을 하드코딩하지 않는다(§3 자산 보호 원칙과 §6 범용성 원칙 둘 다 이유).
