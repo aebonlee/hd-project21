@@ -515,7 +515,12 @@ function tokenize(name){
 /* 짧은 키워드(3자 이하)는 부분일치 시 다른 단어에 우연히 포함되는 오탐이 잦아
    (예: 'ain' ⊂ 'maintenance') 토큰/텍스트 전체를 단어 경계로 매칭한다 */
 function kwHitTok(tok,k){ return k.length<=3 ? tok===k : tok.includes(k); }
-function kwHitText(text,k){ return k.length<=3 ? new RegExp('\\b'+k+'\\b','i').test(text) : text.includes(k); }
+/* JS \b는 '_'를 단어문자로 취급해 'rpm_310'에서 'rpm'을 놓친다 — 영문자 연속 구간으로 직접 토큰화해서 대조 */
+function kwHitText(text,k){
+  if(k.length>3) return text.includes(k);
+  const toks=text.toLowerCase().match(/[a-z]+/g);
+  return !!toks && toks.includes(k);
+}
 function classify(fn){
   const nameTok=tokenize(fn.name);
   const branchText=(fn.branchSummary||[]).map(b=>b.cond).join(' ').toLowerCase();
