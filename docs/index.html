@@ -650,36 +650,143 @@ function wrapText(t,max){
   if(cur) lines.push(cur);
   return lines.slice(0,3);
 }
-function flowToSVG(flow, fn){
-  const W=560; const rows=[];
-  function walk(nodes, depth){
-    nodes.forEach(n=>{
-      let label, kind;
-      if(n.type==='return'){ label='RETURN '+n.label; kind='ret'; }
-      else if(n.type==='else'){ label='ELSE'; kind='else'; }
-      else if(n.type==='switch'){ label='SWITCH '+n.cond; kind='if'; }
-      else { label='IF '+n.cond; kind='if'; }
-      rows.push({depth, label, kind});
-      if(n.children) walk(n.children, depth+1);
+/* ---- 다이아몬드/화살표 플로우차트 렌더러 (Phase2 화면 전용 — Word는 flowToDocxParas 사용) ---- */
+const FLOW_DW=168, FLOW_DH=48, FLOW_RW=156, FLOW_RH=28, FLOW_GAP=16, FLOW_SIDE=196, FLOW_PAD=18, FLOW_MAXNODES=26;
+let FLOW_SVG_SEQ=0;
+
+/* if 노드 뒤에 바로 오는 else 노드를 하나의 결정(참/거짓 두 갈래)으로 합친다 */
+function pairBranches(nodes){
+  const out=[];
+  for(let i=0;i<nodes.length;i++){
+    const n=nodes[i];
+    if(n.type==='return'){ out.push({kind:'return', label:n.label}); continue; }
+    if(n.type==='else'){
+      out.push({kind:'decision', cond:'그 외 처리', trueChildren:pairBranches(n.children||[]), falseChildren:[]});
+      continue;
+    }
+    let falseChildren=[];
+    if(nodes[i+1] && nodes[i+1].type==='else'){ falseChildren=pairBranches(nodes[i+1].children||[]); i++; }
+    out.push({
+      kind:'decision',
+      cond: (n.type==='switch'?'SWITCH ':'') + n.cond,
+      trueChildren: pairBranches(n.children||[]),
+      falseChildren
     });
   }
-  walk(flow,0);
-  const rowH=30, padTop=14;
-  const H=padTop*2 + Math.max(1,rows.length)*rowH;
-  let body='';
-  if(!rows.length){
-    body+=`<text x="20" y="30" fill="#5b6b7f" font-size="12.5">조건 분기 없이 순차 처리되는 루틴입니다.</text>`;
+  return out;
+}
+
+function flowSvgWrap(cx,cy,text,maxW,size){
+  const words=String(text).split(' '); const lines=[]; let cur='';
+  const maxChars=Math.max(6, Math.floor(maxW/(size*0.6)));
+  words.forEach(w=>{ if((cur+' '+w).trim().length>maxChars){ lines.push(cur.trim()); cur=w; } else cur=(cur+' '+w).trim(); });
+  if(cur) lines.push(cur);
+  const L=lines.slice(0,3);
+  const lh=size+3;
+  const startY=cy-((L.length-1)*lh)/2+Math.round(size*0.35);
+  return L.map((l,i)=>`<text x="${cx}" y="${startY+i*lh}" font-size="${size}" text-anchor="middle" fill="#182338">${esc(clamp(l,28))}</text>`).join('');
+}
+function flowDiamond(cx,cy,cond){
+  const pts=`${cx},${cy-FLOW_DH/2} ${cx+FLOW_DW/2},${cy} ${cx},${cy+FLOW_DH/2} ${cx-FLOW_DW/2},${cy}`;
+  return `<polygon points="${pts}" fill="#eaf1fd" stroke="#2f6fd6" stroke-width="1.4"/>` + flowSvgWrap(cx,cy,cond,FLOW_DW*0.55,10);
+}
+function flowTerminal(x,y,label){
+  const cx=x, cy=y+FLOW_RH/2;
+  return `<rect x="${x-FLOW_RW/2}" y="${y}" width="${FLOW_RW}" height="${FLOW_RH}" rx="${FLOW_RH/2}" fill="#e6f6ef" stroke="#1f8a70" stroke-width="1.4"/>`
+    + flowSvgWrap(cx,cy,'RETURN '+label,FLOW_RW*0.85,10.5);
+}
+function flowArrowDown(x,y1,y2,label){
+  let s=`<path d="M ${x} ${y1} L ${x} ${y2-6}" fill="none" stroke="#7a8ba3" stroke-width="1.4" marker-end="url(#fah)"/>`;
+  if(label) s+=`<text x="${x+7}" y="${(y1+y2)/2+3}" font-size="10" fill="#2f6fd6" font-weight="700">${esc(label)}</text>`;
+  return s;
+}
+function flowArrowRightDown(x1,y,x2,y2,label){
+  let s=`<path d="M ${x1} ${y} L ${x2} ${y} L ${x2} ${y2-6}" fill="none" stroke="#b26a00" stroke-width="1.4" marker-end="url(#fah)"/>`;
+  if(label) s+=`<text x="${(x1+x2)/2}" y="${y-6}" font-size="10" fill="#b26a00" font-weight="700" text-anchor="middle">${esc(label)}</text>`;
+  return s;
+}
+function flowMergeBack(x1,y1,x2,y2){
+  const midY=y1+FLOW_GAP/2;
+  return `<path d="M ${x1} ${y1} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${y2-6}" fill="none" stroke="#9aa8bd" stroke-dasharray="4,3" stroke-width="1.3" marker-end="url(#fah)"/>`;
+}
+
+function flowLayoutSeq(items, x, y, counter){
+  let elements=[], maxRight=x+FLOW_DW/2, prevBottom=null, curY=y;
+  for(const item of items){
+    if(counter.n>=FLOW_MAXNODES){
+      elements.push(`<text x="${x}" y="${curY+14}" font-size="10.5" fill="#b26a00">…(하위 분기 생략 — 소스 참조)</text>`);
+      curY+=22; prevBottom=null; break;
+    }
+    if(prevBottom) elements.push(flowArrowDown(x, prevBottom.y, curY));
+    if(item.kind==='return'){
+      counter.n++;
+      elements.push(flowTerminal(x, curY, item.label));
+      prevBottom={x,y:curY+FLOW_RH};
+      curY += FLOW_RH+FLOW_GAP;
+    } else {
+      counter.n++;
+      const dCenterY=curY+FLOW_DH/2;
+      elements.push(flowDiamond(x, dCenterY, item.cond));
+      const trueY=curY+FLOW_DH+FLOW_GAP;
+      elements.push(flowArrowDown(x, curY+FLOW_DH, trueY, '예'));
+      const trueRes = item.trueChildren.length
+        ? flowLayoutSeq(item.trueChildren, x, trueY, counter)
+        : {elements:[], bottomY:trueY, maxRight:x+FLOW_DW/2};
+      elements.push(...trueRes.elements);
+      maxRight=Math.max(maxRight, trueRes.maxRight);
+      const trueTerminal = item.trueChildren.length>0 && item.trueChildren[item.trueChildren.length-1].kind==='return';
+
+      let falseExit={x, y:curY+FLOW_DH}, falseTerminal=false, falseRes=null;
+      if(item.falseChildren.length){
+        const falseX=x+FLOW_SIDE, falseY=dCenterY+FLOW_GAP;
+        elements.push(flowArrowRightDown(x+FLOW_DW/2, dCenterY, falseX, falseY, '아니오'));
+        falseRes = flowLayoutSeq(item.falseChildren, falseX, falseY, counter);
+        elements.push(...falseRes.elements);
+        maxRight=Math.max(maxRight, falseRes.maxRight);
+        falseTerminal = item.falseChildren[item.falseChildren.length-1].kind==='return';
+        falseExit={x:falseX, y:falseRes.bottomY};
+      }
+
+      if(trueTerminal && (!item.falseChildren.length || falseTerminal)){
+        prevBottom=null;
+        curY=Math.max(trueRes.bottomY, falseExit.y)+FLOW_GAP;
+      } else if(trueTerminal){
+        const mergeY=Math.max(trueRes.bottomY, falseExit.y)+FLOW_GAP;
+        elements.push(flowMergeBack(falseExit.x, falseExit.y, x, mergeY));
+        prevBottom={x, y:mergeY};
+        curY=mergeY;
+      } else {
+        prevBottom={x, y:trueRes.bottomY};
+        curY=Math.max(trueRes.bottomY, falseExit.y + (item.falseChildren.length?FLOW_GAP:0));
+      }
+    }
   }
-  rows.forEach((r,idx)=>{
-    const x=20+r.depth*26, y=padTop+idx*rowH;
-    const fill = r.kind==='if' ? '#eaf1fd' : r.kind==='else' ? '#fdf1dd' : '#e6f6ef';
-    const stroke = r.kind==='if' ? '#2f6fd6' : r.kind==='else' ? '#b26a00' : '#1f8a70';
-    const boxW=Math.min(W-x-16, 12*Math.min(String(r.label).length,44)+30);
-    body+=`<rect x="${x}" y="${y}" rx="6" width="${boxW}" height="22" fill="${fill}" stroke="${stroke}" stroke-width="1.2"/>`;
-    body+=`<text x="${x+8}" y="${y+15}" fill="#182338" font-size="11.5">${esc(clamp(r.label,46))}</text>`;
-    if(idx>0) body+=`<line x1="${x}" y1="${y-8}" x2="${x}" y2="${y}" stroke="#c3d0e2" stroke-width="1"/>`;
-  });
-  return `<svg class="flow" width="100%" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${body}</svg>`;
+  return {elements, bottomY:curY, maxRight};
+}
+
+function flowToSVG(flow, fn){
+  FLOW_SVG_SEQ++;
+  const markerId='fah';
+  const decisions=pairBranches(flow);
+  const startX=FLOW_PAD+FLOW_DW/2;
+  const defs=`<defs><marker id="${markerId}" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#7a8ba3"/></marker></defs>`;
+  if(!decisions.length){
+    return `<svg class="flow" width="100%" viewBox="0 0 300 70" xmlns="http://www.w3.org/2000/svg">${defs}
+      <rect x="20" y="10" width="150" height="26" rx="13" fill="#e6f6ef" stroke="#1f8a70" stroke-width="1.4"/>
+      <text x="95" y="27" font-size="11" text-anchor="middle" fill="#182338">START — 순차 처리</text>
+      <path d="M95 36 L95 50" stroke="#7a8ba3" stroke-width="1.4" marker-end="url(#${markerId})"/>
+      <rect x="20" y="52" width="150" height="14" fill="none"/>
+      <text x="20" y="66" font-size="10.5" fill="#5b6b7f">조건 분기 없이 순차 처리되는 루틴입니다.</text>
+    </svg>`;
+  }
+  const counter={n:0};
+  const startBox=`<rect x="${startX-70}" y="${FLOW_PAD}" width="140" height="24" rx="12" fill="#eef3fa" stroke="#8ea3bc" stroke-width="1.2"/><text x="${startX}" y="${FLOW_PAD+16}" font-size="10.5" text-anchor="middle" fill="#182338">START ${esc(clamp(fn.name+'()',18))}</text>`;
+  const seqStartY=FLOW_PAD+24+FLOW_GAP;
+  const res=flowLayoutSeq(decisions, startX, seqStartY, counter);
+  const startArrow=flowArrowDown(startX, FLOW_PAD+24, seqStartY, '');
+  const H=res.bottomY+FLOW_PAD;
+  const W=res.maxRight+FLOW_PAD;
+  return `<svg class="flow" width="100%" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${defs}${startBox}${startArrow}${res.elements.join('')}</svg>`;
 }
 function showDetail(name){
   const f=ANALYSIS.fns.find(x=>x.name===name);
