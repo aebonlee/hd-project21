@@ -115,6 +115,8 @@ node scripts/verify.mjs
 | `939faf6` | `\b`가 `_`를 못 넘는 회귀 버그 수정(§6) |
 | `ccd0a5b` | Phase2 함수 표 검색·정렬 추가 |
 | `8679706` | 개발일지 정리 |
+| `3a8a77d` | 프로젝트 CLAUDE.md 신설 + `scripts/verify.mjs` 리포 편입 |
+| `eceb1e5` | switch/case 개별 분기 세분화 |
 
 상세 서술은 `Dev_md/2026-08-27_기획-착수.md`.
 
