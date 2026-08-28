@@ -7,9 +7,9 @@
 <meta name="robots" content="noindex, nofollow">
 <style>
 :root{
-  --navy:#0f2748; --navy2:#173a68; --blue:#2f6fd6; --teal:#1f8a70; --amber:#b26a00; --red:#c0392b;
+  --navy:#13294b; --navy2:#1b3a66; --blue:#1f6feb; --teal:#0e7c66; --amber:#b26a00; --red:#c0392b;
   --bg:#f4f7fb; --panel:#ffffff; --line:#dbe3ee; --line2:#eef2f8; --ink:#182338; --sub:#5b6b7f;
-  --chip:#eef3fa; --container-wide:1180px; --container-pad:20px;
+  --chip:#eef3fa; --container-wide:1180px; --container-pad:20px; --shadow:0 2px 10px rgba(19,41,75,.08);
 }
 @media (min-width:640px){ :root{ --container-pad:28px; } }
 @media (min-width:1024px){ :root{ --container-pad:36px; } }
@@ -35,15 +35,17 @@ header.top p{color:#c7d6ee; margin:4px 0 0; font-size:14px}
 .step.done{border-color:var(--teal)}
 .step.done b{color:var(--teal)}
 
-.card{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:20px; margin-bottom:18px}
+.card{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:20px; margin-bottom:18px; box-shadow:var(--shadow)}
 .card h2{font-size:17px; border-bottom:2px solid var(--line2); padding-bottom:10px; margin-bottom:14px}
 .hint{font-size:12.5px; color:var(--sub)}
 .note{font-size:12.5px; color:var(--sub); background:var(--chip); border-radius:8px; padding:10px 12px; margin-top:10px; line-height:1.6}
 .warn{color:var(--amber)}
 
-#dropzone{border:2px dashed #b7c6dd; border-radius:12px; padding:32px 18px; text-align:center; cursor:pointer; background:#fafcff}
+#dropzone{border:2px dashed #b7c6dd; border-radius:12px; padding:32px 18px; text-align:center; cursor:pointer; background:#fafcff; transition:.2s}
+#dropzone:hover{border-color:var(--blue); background:#eef4ff}
 #dropzone.drag{border-color:var(--blue); background:#eef4ff}
-#dropzone .big{font-size:15px; color:var(--navy); font-weight:700}
+#dropzone .icon{font-size:30px; line-height:1}
+#dropzone .big{font-size:15px; color:var(--navy); font-weight:700; margin-top:6px}
 #dropzone .small{font-size:12.5px; color:var(--sub); margin-top:6px}
 #fileinfo{margin-top:10px; font-size:13px; color:var(--teal)}
 
@@ -124,6 +126,7 @@ footer.foot{padding:26px 0 50px; text-align:center; color:var(--sub); font-size:
     <div class="card">
       <h2>Phase 1. 소스코드 업로드</h2>
       <div id="dropzone">
+        <div class="icon">📄</div>
         <div class="big">C 파일을 여기로 끌어다 놓거나 클릭해서 선택하세요</div>
         <div class="small">확장자 .c / .h / .txt · CP949(EUC-KR)·UTF-8 자동 인식 · 여러 개 선택 시 이어붙여 분석</div>
         <input type="file" id="fileInput" accept=".c,.h,.txt" multiple style="display:none">
@@ -770,16 +773,16 @@ function flowSvgWrap(cx,cy,text,maxW,size){
 }
 function flowDiamond(cx,cy,cond){
   const pts=`${cx},${cy-FLOW_DH/2} ${cx+FLOW_DW/2},${cy} ${cx},${cy+FLOW_DH/2} ${cx-FLOW_DW/2},${cy}`;
-  return `<polygon points="${pts}" fill="#eaf1fd" stroke="#2f6fd6" stroke-width="1.4"/>` + flowSvgWrap(cx,cy,cond,FLOW_DW*0.55,10);
+  return `<polygon points="${pts}" fill="#eaf1fd" stroke="#1f6feb" stroke-width="1.4"/>` + flowSvgWrap(cx,cy,cond,FLOW_DW*0.55,10);
 }
 function flowTerminal(x,y,label){
   const cx=x, cy=y+FLOW_RH/2;
-  return `<rect x="${x-FLOW_RW/2}" y="${y}" width="${FLOW_RW}" height="${FLOW_RH}" rx="${FLOW_RH/2}" fill="#e6f6ef" stroke="#1f8a70" stroke-width="1.4"/>`
+  return `<rect x="${x-FLOW_RW/2}" y="${y}" width="${FLOW_RW}" height="${FLOW_RH}" rx="${FLOW_RH/2}" fill="#e6f6ef" stroke="#0e7c66" stroke-width="1.4"/>`
     + flowSvgWrap(cx,cy,'RETURN '+label,FLOW_RW*0.85,10.5);
 }
 function flowArrowDown(x,y1,y2,label){
   let s=`<path d="M ${x} ${y1} L ${x} ${y2-6}" fill="none" stroke="#7a8ba3" stroke-width="1.4" marker-end="url(#fah)"/>`;
-  if(label) s+=`<text x="${x+7}" y="${(y1+y2)/2+3}" font-size="10" fill="#2f6fd6" font-weight="700">${esc(label)}</text>`;
+  if(label) s+=`<text x="${x+7}" y="${(y1+y2)/2+3}" font-size="10" fill="#1f6feb" font-weight="700">${esc(label)}</text>`;
   return s;
 }
 function flowArrowRightDown(x1,y,x2,y2,label){
@@ -855,7 +858,7 @@ function flowToSVG(flow, fn){
   const defs=`<defs><marker id="${markerId}" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#7a8ba3"/></marker></defs>`;
   if(!decisions.length){
     return `<svg class="flow" width="100%" viewBox="0 0 300 70" xmlns="http://www.w3.org/2000/svg">${defs}
-      <rect x="20" y="10" width="150" height="26" rx="13" fill="#e6f6ef" stroke="#1f8a70" stroke-width="1.4"/>
+      <rect x="20" y="10" width="150" height="26" rx="13" fill="#e6f6ef" stroke="#0e7c66" stroke-width="1.4"/>
       <text x="95" y="27" font-size="11" text-anchor="middle" fill="#182338">START — 순차 처리</text>
       <path d="M95 36 L95 50" stroke="#7a8ba3" stroke-width="1.4" marker-end="url(#${markerId})"/>
       <rect x="20" y="52" width="150" height="14" fill="none"/>
